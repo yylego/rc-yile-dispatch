@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/gin-gonic/gin"
 	"github.com/yylego/must"
 	"github.com/yylego/rc-yile-dispatch/internal/dispatch"
 	"github.com/yylego/rc-yile-dispatch/internal/handlers"
@@ -18,19 +19,18 @@ func Run(db *gorm.DB, address string, quit <-chan struct{}) {
 
 	d.Start()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/dispatch", h.Submit)
-	mux.HandleFunc("/api/task", h.GetTask)
-	mux.HandleFunc("/api/tasks", h.ListTasks)
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
+	engine := gin.New()
+	engine.Use(gin.Recovery())
+
+	engine.POST("/api/dispatch", h.Submit())
+	engine.GET("/api/task", h.GetTask())
+	engine.GET("/api/tasks", h.ListTasks())
+	engine.GET("/health", h.Health())
 
 	log.Printf("[service] listening on %s", address)
 
 	go func() {
-		must.Done(http.ListenAndServe(address, mux))
+		must.Done(http.ListenAndServe(address, engine))
 	}()
 
 	<-quit

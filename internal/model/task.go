@@ -13,7 +13,7 @@ const (
 	StatusDeadLine TaskStatus = "deadline" // exceeded max retries, needs manual inspection
 )
 
-// Task is the core entity — one notification request to be dispatched
+// Task is the main object — one notification request to be dispatched
 type Task struct {
 	gorm.Model
 	Method     string     `gorm:"type:varchar(10);not null"`       // HTTP method (GET/POST/PUT/PATCH/DELETE)

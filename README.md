@@ -42,8 +42,8 @@ Business System                    This Service                    External API
      |                                |  3. HTTP request  ------------>|
      |                                |                                |
      |                                |  4a. 2xx → mark success        |
-     |                                |  4b. fail → exponential backoff|
-     |                                |       retry until max retries  |
+     |                                |  4b. fail → progressive backoff|
+     |                                |       re-attempt until max count  |
      |                                |  4c. max retries → deadline    |
 ```
 
@@ -56,7 +56,7 @@ Business System                    This Service                    External API
 - Accept notification tasks via HTTP API
 - Persist tasks to prevent data loss
 - Dispatch HTTP requests to target URLs
-- Automatic retries with exponential backoff
+- Automatic retries with progressive backoff
 - Dead-letter status when max retries exceeded
 
 **What this service does NOT do:**
@@ -72,7 +72,7 @@ The notification **may be sent more than once** (e.g., if the external API recei
 
 - The requirement says business systems don't care about return values
 - Most notification APIs are idempotent or tolerant of duplicates
-- Exactly-once delivery requires distributed transactions, which is massive over-engineering in MVP
+- Precise-once dispatch requires distributed transactions, which is massive over-engineering in MVP
 
 ### 3. Failure Handling
 
@@ -96,9 +96,9 @@ The notification **may be sent more than once** (e.g., if the external API recei
 | Choice            | Reasoning                                                 | Alternative (not used)                                          |
 | ----------------- | --------------------------------------------------------- | --------------------------------------------------------------- |
 | SQLite            | Single-binary deployment, zero config, good enough in MVP | PostgreSQL (production), Redis (volatile)                       |
-| Database as queue | Simple, reliable, no extra infrastructure                 | RabbitMQ/Kafka (overkill in MVP)                                |
+| Database as queue | Simple, reliable, no extra infrastructure                 | RabbitMQ/Kafka (excessive in MVP)                               |
 | Polling worker    | Simple implementation, predictable load                   | Goroutine-per-task (resource intensive), event-driven (complex) |
-| `net/http`        | Standard lib, no framework overhead                       | Gin/Echo/Kratos (unnecessary abstraction in MVP)                |
+| Gin + reggin      | Type-safe routes, auto param binding, custom HTTP status  | net/http (too much boilerplate), Kratos (too much abstraction)  |
 
 **Why not use a message queue (Kafka/RabbitMQ)?**
 
@@ -107,20 +107,20 @@ The notification **may be sent more than once** (e.g., if the external API recei
 - The "queue" semantics are achieved through task status + NextRunAt in the database
 - If traffic grows 100x, migrating to a dedicated queue is straightforward — the Store interface abstracts the persistence
 
-**Why not use a web framework?**
+**Why use Gin + reggin instead of net/http?**
 
-- 3 endpoints don't justify a framework
-- `net/http` + `ServeMux` is sufficient and has zero dependencies
-- Demonstrates that the decision was made based on actual requirements, not habit
+- Type-safe handler wrappers with generic response types (H pattern)
+- Auto JSON param binding, custom HTTP status code on each outcome
+- Demonstrates choosing the right abstraction based on actual needs
 
 ### 5. Future Evolution
 
 If this becomes a production service with significant traffic:
 
 1. **Phase 1: Horizontal scaling** — Switch SQLite to PostgreSQL, run multiple workers with row-level locking (`SELECT ... FOR UPDATE SKIP LOCKED`)
-2. **Phase 2: Message queue** — Replace database polling with RabbitMQ/Kafka for higher throughput and lower latency
+2. **Phase 2: Message queue** — Replace database polling with RabbitMQ/Kafka for higher throughput and less response time
 3. **Phase 3: Per-vendor configuration** — Add vendor registry with rate limits, circuit breakers, custom timeout settings
-4. **Phase 4: Observability** — Prometheus metrics (dispatch latency, success rate, queue depth), distributed tracing
+4. **Phase 4: Observability** — Prometheus metrics (dispatch speed, success rate, queue depth), distributed tracing
 
 ## API
 
@@ -177,7 +177,7 @@ rc-yile-dispatch/
 │   ├── model/task.go            # Task entity (database schema)
 │   ├── store/store.go           # Database operations (CRUD + query)
 │   ├── handler/submit.go        # HTTP handlers (submit/query tasks)
-│   └── worker/dispatch.go       # Background worker (poll + dispatch + retry)
+│   └── worker/dispatch.go       # Background dispatch (poll + send + backoff)
 ├── go.mod
 └── README.md
 ```
@@ -187,7 +187,7 @@ rc-yile-dispatch/
 ### Where AI helped
 
 - Scaffolding the initial project structure and boilerplate code
-- Writing the exponential backoff logic in store.MarkFailed
+- Writing the progressive backoff logic in store.MarkFailed
 - Generating the HTTP handler with input validation
 
 ### AI suggestions NOT adopted
